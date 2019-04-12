@@ -31,11 +31,14 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Size;
@@ -44,6 +47,7 @@ import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -121,6 +125,22 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Android 6, API 23以上でパーミッシンの確認
+        if (Build.VERSION.SDK_INT >= 23) {
+            checkPermission();
+        } else {
+            //setUpReadWriteExternalStorage();
+        }
+        if (ContextCompat.checkSelfPermission(getApplication(), Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestCameraPermission();
+            return;
+        }
+    }
+
     /**
      * Called when our {@code Activity} gains focus. <p>Starts initializing the camera.</p>
      */
@@ -141,6 +161,14 @@ public class MainActivity extends AppCompatActivity {
         mSurfaceView = (SurfaceView) layout.findViewById(R.id.mainSurfaceView);
         mSurfaceView.getHolder().addCallback(mSurfaceHolderCallback);
         setContentView(mSurfaceView);
+
+        mSurfaceView.setClickable(true);
+        mSurfaceView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onClickOnSurfaceView(v);
+            }
+        });
 
         // Control flow continues in mSurfaceHolderCallback.surfaceChanged()
     }
@@ -194,6 +222,38 @@ public class MainActivity extends AppCompatActivity {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_PERMISSION);
         }
     }
+    // permissionの確認
+    public void checkPermission() {
+        // 既に許可している
+        if (ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED){
+            //setUpReadWriteExternalStorage();
+        }
+        // 拒否していた場合
+        else{
+            requestLocationPermission();
+        }
+    }
+    private final int REQUEST_PERMISSION = 1000;
+    // 許可を求める
+    private void requestLocationPermission() {
+        if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+            ActivityCompat.requestPermissions(MainActivity.this,
+                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_PERMISSION);
+
+        } else {
+            Toast toast = Toast.makeText(this, "アプリ実行に許可が必要です", Toast.LENGTH_SHORT);
+            toast.show();
+
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE,},
+                    REQUEST_PERMISSION);
+
+        }
+    }
+
     /**
      * Called when the user clicks on our {@code SurfaceView}, which has ID {@code mainSurfaceView}
      * as defined in the {@code mainactivity.xml} layout file. <p>Captures a full-resolution image
@@ -202,8 +262,7 @@ public class MainActivity extends AppCompatActivity {
     public void onClickOnSurfaceView(View v) {
         if (mCaptureSession != null) {
             try {
-                CaptureRequest.Builder requester =
-                        mCamera.createCaptureRequest(mCamera.TEMPLATE_STILL_CAPTURE);
+                CaptureRequest.Builder requester = mCamera.createCaptureRequest(mCamera.TEMPLATE_STILL_CAPTURE);
                 requester.addTarget(mCaptureBuffer.getSurface());
                 try {
                     // This handler can be null because we aren't actually attaching any callback
@@ -256,7 +315,7 @@ public class MainActivity extends AppCompatActivity {
                         CameraCharacteristics cameraCharacteristics =
                                 mCameraManager.getCameraCharacteristics(cameraId);
                         if (cameraCharacteristics.get(cameraCharacteristics.LENS_FACING) ==
-                                CameraCharacteristics.LENS_FACING_BACK) {
+                                CameraCharacteristics.LENS_FACING_FRONT) {
                             Log.i(TAG, "Found a back-facing camera");
                             StreamConfigurationMap info = cameraCharacteristics
                                     .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
@@ -266,12 +325,12 @@ public class MainActivity extends AppCompatActivity {
                                     Arrays.asList(info.getOutputSizes(ImageFormat.JPEG)),
                                     new CompareSizesByArea());
 
+                            //largestSize = new Size(640, 480);
                             // Prepare an ImageReader in case the user wants to capture images
                             Log.i(TAG, "Capture size: " + largestSize);
                             mCaptureBuffer = ImageReader.newInstance(largestSize.getWidth(),
                                     largestSize.getHeight(), ImageFormat.JPEG, /*maxImages*/2);
-                            mCaptureBuffer.setOnImageAvailableListener(
-                                    mImageCaptureListener, mBackgroundHandler);
+                            mCaptureBuffer.setOnImageAvailableListener(mImageCaptureListener, mBackgroundHandler);
 
                             // Danger, W.R.! Attempting to use too large a preview size could
                             // exceed the camera bus' bandwidth limitation, resulting in
@@ -334,9 +393,8 @@ public class MainActivity extends AppCompatActivity {
                     mCamera = camera;
                     try {
                         List<Surface> outputs = Arrays.asList(
-                                mSurfaceView.getHolder().getSurface(), mCaptureBuffer.getSurface());
-                        camera.createCaptureSession(outputs, mCaptureSessionListener,
-                                mBackgroundHandler);
+                                mSurfaceView.getHolder().getSurface(),mCaptureBuffer.getSurface());
+                        camera.createCaptureSession(outputs, mCaptureSessionListener, mBackgroundHandler);
                     } catch (CameraAccessException ex) {
                         Log.e(TAG, "Failed to create a capture session", ex);
                     }
@@ -375,8 +433,7 @@ public class MainActivity extends AppCompatActivity {
 
                             // Start displaying preview images
                             try {
-                                session.setRepeatingRequest(previewRequest, /*listener*/null,
-                                        /*handler*/null);
+                                session.setRepeatingRequest(previewRequest, /*listener*/null,/*handler*/null);
                             } catch (CameraAccessException ex) {
                                 Log.e(TAG, "Failed to make repeating preview request", ex);
                             }
@@ -407,6 +464,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onImageAvailable(ImageReader reader) {
                     // Save the image once we get a chance
+                    Log.e(TAG, "onImageAvailable: " );
                     mBackgroundHandler.post(new CapturedImageSaver(reader.acquireNextImage()));
 
                     // Control flow continues in CapturedImageSaver#run()
@@ -424,6 +482,7 @@ public class MainActivity extends AppCompatActivity {
             mCapture = capture;
         }
 
+
         @Override
         public void run() {
             try {
@@ -433,7 +492,8 @@ public class MainActivity extends AppCompatActivity {
                                 Environment.DIRECTORY_PICTURES));
                 try (FileOutputStream ostream = new FileOutputStream(file)) {
                     Log.i(TAG, "Retrieved image is" +
-                            (mCapture.getFormat() == ImageFormat.JPEG ? "" : "n't") + " a JPEG");
+                            (mCapture.getFormat() == ImageFormat.JPEG ? "" : "n't") + " a JPEG" +
+                            ",format is :" + mCapture.getFormat());
                     ByteBuffer buffer = mCapture.getPlanes()[0].getBuffer();
                     Log.i(TAG, "Captured image size: " +
                             mCapture.getWidth() + 'x' + mCapture.getHeight());
